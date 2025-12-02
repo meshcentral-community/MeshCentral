@@ -3317,49 +3317,55 @@ function onTunnelData(data)
                 };
 
                 // Perform notification if needed. Toast messages may not be supported on all platforms.
-                if (this.httprequest.consentAutoAcceptIfNoUser || this.httprequest.consentAutoAcceptIfFileNoUser || this.httprequest.consentAutoAcceptIfLocked || this.httprequest.consentAutoAcceptIfFileLocked) {
-                        var p = require('user-sessions').enumerateUsers();
-                        p.sessionid = this.httprequest.sessionid;
-                        p.ws = this;
-                        p.then(function (u) {
-                            var v = [];
-                            for (var i in u) {
-                                if (u[i].State == 'Active') { v.push({ tsid: i, type: u[i].StationName, user: u[i].Username, domain: u[i].Domain }); }
-                            }
-                            var autoAccept = false;
-                            
-                            // Check if we should auto-accept because no user is present
-                            if ((this.ws.httprequest.consentAutoAcceptIfNoUser || this.ws.httprequest.consentAutoAcceptIfFileNoUser) && (v.length == 0)) {
-                                autoAccept = true;
-                            }
-                            
-                            // Check if we should auto-accept because all users are locked
-                            if ((this.ws.httprequest.consentAutoAcceptIfLocked || this.ws.httprequest.consentAutoAcceptIfFileLocked) && (v.length > 0)) {
-                                var allUsersLocked = true;
-                                if (!meshCoreObj.lusers || meshCoreObj.lusers.length == 0) {
-                                    // No locked users list available, assume users are not locked
-                                    allUsersLocked = false;
-                                } else {
-                                    for (var i in v) {
-                                        var username = v[i].domain ? (v[i].domain + '\\' + v[i].user) : v[i].user;
-                                        if (meshCoreObj.lusers.indexOf(username) == -1) {
-                                            allUsersLocked = false;
-                                            break;
+                if (this.httprequest.consent && (this.httprequest.consent & 32)) {
+                    // User asked for consent so now we check if we can auto accept if no user is present/loggedin
+                    if (this.httprequest.consentAutoAcceptIfNoUser || this.httprequest.consentAutoAcceptIfFileNoUser || this.httprequest.consentAutoAcceptIfLocked || this.httprequest.consentAutoAcceptIfFileLocked) {
+                            var p = require('user-sessions').enumerateUsers();
+                            p.sessionid = this.httprequest.sessionid;
+                            p.ws = this;
+                            p.then(function (u) {
+                                var v = [];
+                                for (var i in u) {
+                                    if (u[i].State == 'Active') { v.push({ tsid: i, type: u[i].StationName, user: u[i].Username, domain: u[i].Domain }); }
+                                }
+                                var autoAccept = false;
+                                
+                                // Check if we should auto-accept because no user is present
+                                if ((this.ws.httprequest.consentAutoAcceptIfNoUser || this.ws.httprequest.consentAutoAcceptIfFileNoUser) && (v.length == 0)) {
+                                    autoAccept = true;
+                                }
+                                
+                                // Check if we should auto-accept because all users are locked
+                                if ((this.ws.httprequest.consentAutoAcceptIfLocked || this.ws.httprequest.consentAutoAcceptIfFileLocked) && (v.length > 0)) {
+                                    var allUsersLocked = true;
+                                    if (!meshCoreObj.lusers || meshCoreObj.lusers.length == 0) {
+                                        // No locked users list available, assume users are not locked
+                                        allUsersLocked = false;
+                                    } else {
+                                        for (var i in v) {
+                                            var username = v[i].domain ? (v[i].domain + '\\' + v[i].user) : v[i].user;
+                                            if (meshCoreObj.lusers.indexOf(username) == -1) {
+                                                allUsersLocked = false;
+                                                break;
+                                            }
                                         }
                                     }
+                                    if (allUsersLocked) { autoAccept = true; }
                                 }
-                                if (allUsersLocked) { autoAccept = true; }
-                            }
-                            
-                            if (autoAccept) {
-                                // User Consent Prompt is not required
-                                files_consent_ok(this.ws);
-                            } else { 
-                                // User is present and not all locked, so we still need consent
-                                files_consent_ask(this.ws);
-                            }
-                        });
+                                
+                                if (autoAccept) {
+                                    // User Consent Prompt is not required
+                                    files_consent_ok(this.ws);
+                                } else { 
+                                    // User is present and not all locked, so we still need consent
+                                    files_consent_ask(this.ws);
+                                }
+                            });
                     } else {
+                         // User Consent Prompt is required
+                        files_consent_ask(this);
+                    }
+                }  else {
                     // User Consent Prompt is not required
                     files_consent_ok(this);
                 }
@@ -5297,6 +5303,38 @@ function processConsoleCommand(cmd, args, rights, sessionid) {
             }
             case 'netinfo': { // Show network interface information
                 var interfaces = require('os').networkInterfaces();
+                if (process.platform == 'win32') {
+                    try {
+                        var ret = require('win-wmi').query('ROOT\\CIMV2', 'SELECT InterfaceIndex,NetConnectionID,Speed FROM Win32_NetworkAdapter', ['InterfaceIndex','NetConnectionID','Speed']);
+                        if (ret[0]) {
+                            var speedMap = {};
+                            for (var i = 0; i < ret.length; i++) speedMap[ret[i].InterfaceIndex] = ret[i].Speed;
+                            var adapterNames = Object.keys(interfaces);
+                            for (var j = 0; j < adapterNames.length; j++) {
+                                var theinterfaces = interfaces[adapterNames[j]];
+                                for (var k = 0; k < theinterfaces.length; k++) {
+                                    var iface = theinterfaces[k], speed = speedMap[iface.index] || 0;
+                                    iface.speed = parseInt(speed); // bits per seconds
+                                }
+                            }
+                        }
+                    } catch(ex) { }
+                } else if (process.platform == 'linux') {
+                    var adapterNames = Object.keys(interfaces);
+                    for (var i = 0; i < adapterNames.length; i++) {
+                        var ifaceName = adapterNames[i];
+                        try {
+                            var speedStr = require('fs').readFileSync('/sys/class/net/' + ifaceName + '/speed').toString();
+                            if ((speedStr.trim() != "") && (speedStr.trim() != "-1")) {
+                                var theinterfaces = interfaces[ifaceName];
+                                for (var k = 0; k < theinterfaces.length; k++) {
+                                    var iface = theinterfaces[k];
+                                    iface.speed = parseInt(speedStr) * 1000000; // bits per seconds
+                                }
+                            }
+                        } catch(ex) { }
+                    }
+                }
                 response = objToString(interfaces, 0, ' ', true);
                 break;
             }
@@ -6008,6 +6046,21 @@ function sendNetworkUpdate(force) {
                     }
                 }
             } catch(ex) { }
+        } else if (process.platform == 'linux') {
+            var adapterNames = Object.keys(netInfo.netif2);
+            for (var i = 0; i < adapterNames.length; i++) {
+                var ifaceName = adapterNames[i];
+                try {
+                    var speedStr = require('fs').readFileSync('/sys/class/net/' + ifaceName + '/speed').toString();
+                    if ((speedStr.trim() != "") && (speedStr.trim() != "-1")) {
+                        var theinterfaces = netInfo.netif2[ifaceName];
+                        for (var k = 0; k < theinterfaces.length; k++) {
+                            var iface = theinterfaces[k];
+                            iface.speed = parseInt(speedStr) * 1000000; // bits per seconds
+                        }
+                    }
+                } catch(ex) { }
+            }
         }
         if (netInfo.netif2) {
             netInfo.action = 'netinfo';

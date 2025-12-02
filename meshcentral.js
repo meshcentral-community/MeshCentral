@@ -139,7 +139,32 @@ function CreateMeshCentralServer(config, args) {
         try { require('./pass').hash('test', function () { }, 0); } catch (ex) { console.log('Old version of node, must upgrade.'); return; } // TODO: Not sure if this test works or not.
 
         // Check for invalid arguments
-        const validArguments = ['_', 'user', 'port', 'aliasport', 'mpsport', 'mpsaliasport', 'redirport', 'rediraliasport', 'cert', 'mpscert', 'deletedomain', 'deletedefaultdomain', 'showall', 'showusers', 'showitem', 'listuserids', 'showusergroups', 'shownodes', 'showallmeshes', 'showmeshes', 'showevents', 'showsmbios', 'showpower', 'clearpower', 'showiplocations', 'help', 'exactports', 'xinstall', 'xuninstall', 'install', 'uninstall', 'start', 'stop', 'restart', 'debug', 'filespath', 'datapath', 'noagentupdate', 'launch', 'noserverbackup', 'mongodb', 'mongodbcol', 'wanonly', 'lanonly', 'nousers', 'mpspass', 'ciralocalfqdn', 'dbexport', 'dbexportmin', 'dbimport', 'dbmerge', 'dbfix', 'dbencryptkey', 'selfupdate', 'tlsoffload', 'usenodedefaulttlsciphers', 'tlsciphers', 'userallowedip', 'userblockedip', 'swarmallowedip', 'agentallowedip', 'agentblockedip', 'fastcert', 'swarmport', 'logintoken', 'logintokenkey', 'logintokengen', 'mailtokengen', 'admin', 'unadmin', 'sessionkey', 'sessiontime', 'minify', 'minifycore', 'dblistconfigfiles', 'dbshowconfigfile', 'dbpushconfigfiles', 'oldencrypt', 'dbpullconfigfiles', 'dbdeleteconfigfiles', 'vaultpushconfigfiles', 'vaultpullconfigfiles', 'vaultdeleteconfigfiles', 'configkey', 'loadconfigfromdb', 'npmpath', 'serverid', 'recordencryptionrecode', 'vault', 'token', 'unsealkey', 'name', 'log', 'dbstats', 'translate', 'createaccount', 'setuptelegram', 'resetaccount', 'pass', 'removesubdomain', 'adminaccount', 'domain', 'email', 'configfile', 'maintenancemode', 'nedbtodb', 'removetestagents', 'agentupdatetest', 'hashpassword', 'hashpass', 'indexmcrec', 'mpsdebug', 'dumpcores', 'dev', 'mysql', 'mariadb', 'trustedproxy'];
+        const validArguments = [
+            '_', 'user', 'port', 'portbind', 'relayport', 'relayaliasport', 'agentport',
+            'agentportbind', 'agentaliasport', 'aliasport', 'mpsport', 'mpsaliasport',
+            'redirport', 'redirportbind', 'rediraliasport', 'cert', 'mpscert',
+            'deletedomain', 'deletedefaultdomain', 'showall', 'showusers', 'showitem',
+            'listuserids', 'showusergroups', 'shownodes', 'showallmeshes', 'showmeshes',
+            'showevents', 'showsmbios', 'showpower', 'clearpower', 'showiplocations',
+            'help', 'exactports', 'xinstall', 'xuninstall', 'install', 'uninstall',
+            'start', 'stop', 'restart', 'debug', 'filespath', 'datapath', 'noagentupdate',
+            'launch', 'noserverbackup', 'mongodb', 'mongodbcol', 'wanonly', 'lanonly',
+            'nousers', 'mpspass', 'ciralocalfqdn', 'dbexport', 'dbexportmin', 'dbimport',
+            'dbmerge', 'dbfix', 'dbencryptkey', 'selfupdate', 'tlsoffload',
+            'usenodedefaulttlsciphers', 'tlsciphers', 'userallowedip', 'userblockedip',
+            'swarmallowedip', 'agentallowedip', 'agentblockedip', 'fastcert', 'swarmport',
+            'logintoken', 'logintokenkey', 'logintokengen', 'mailtokengen', 'admin',
+            'unadmin', 'sessionkey', 'sessiontime', 'minify', 'minifycore',
+            'dblistconfigfiles', 'dbshowconfigfile', 'dbpushconfigfiles', 'oldencrypt',
+            'dbpullconfigfiles', 'dbdeleteconfigfiles', 'vaultpushconfigfiles',
+            'vaultpullconfigfiles', 'vaultdeleteconfigfiles', 'configkey',
+            'loadconfigfromdb', 'npmpath', 'serverid', 'recordencryptionrecode', 'vault',
+            'token', 'unsealkey', 'name', 'log', 'dbstats', 'translate', 'createaccount',
+            'setuptelegram', 'resetaccount', 'pass', 'removesubdomain', 'adminaccount',
+            'domain', 'email', 'configfile', 'maintenancemode', 'nedbtodb',
+            'removetestagents', 'agentupdatetest', 'hashpassword', 'hashpass',
+            'indexmcrec', 'mpsdebug', 'dumpcores', 'dev', 'mysql', 'mariadb', 'trustedproxy'
+        ];
         for (var arg in obj.args) { obj.args[arg.toLocaleLowerCase()] = obj.args[arg]; if (validArguments.indexOf(arg.toLocaleLowerCase()) == -1) { console.log('Invalid argument "' + arg + '", use --help.'); return; } }
         const ENVVAR_PREFIX = "meshcentral_"
         let envArgs = []
@@ -4325,7 +4350,7 @@ function mainStart() {
 
         // Build the list of required modules
         // NOTE: ALL MODULES MUST HAVE A VERSION NUMBER AND THE VERSION MUST MATCH THAT USED IN Dockerfile
-        var modules = ['archiver@7.0.1', 'body-parser@1.20.3', 'cbor@5.2.0', 'compression@1.8.1', 'cookie-session@2.1.1', 'express@4.21.2', 'express-handlebars@7.1.3', 'express-ws@5.0.2', 'ipcheck@0.1.0', 'minimist@1.2.8', 'multiparty@4.2.3', '@seald-io/nedb@4.1.2', 'node-forge@1.3.1', 'ua-parser-js@1.0.40', 'ua-client-hints-js@0.1.2', 'ws@8.18.3', 'yauzl@2.10.0'];
+        var modules = ['archiver@7.0.1', 'body-parser@1.20.3', 'cbor@5.2.0', 'compression@1.8.1', 'cookie-session@2.1.1', 'express@4.21.2', 'express-handlebars@7.1.3', 'express-ws@5.0.2', 'ipcheck@0.1.0', 'minimist@1.2.8', 'multiparty@4.2.3', '@seald-io/nedb@4.1.2', 'node-forge@1.3.2', 'ua-parser-js@1.0.40', 'ua-client-hints-js@0.1.2', 'ws@8.18.3', 'yauzl@2.10.0'];
         if (require('os').platform() == 'win32') { modules.push('node-windows@0.1.14'); modules.push('loadavg-windows@1.1.1'); if (sspi == true) { modules.push('node-sspi@0.2.10'); } } // Add Windows modules
         if (ldap == true) { modules.push('ldapauth-fork@5.0.5'); }
         if (ssh == true) { modules.push('ssh2@1.17.0'); }
