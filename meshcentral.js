@@ -594,13 +594,10 @@ function CreateMeshCentralServer(config, args) {
         } else {
             // if "--launch" is not specified, launch the server as a child process.
             const startArgs = [];
-            for (i in process.argv) {
-                if (i > 0) {
-                    const arg = process.argv[i];
-                    if ((arg.length > 0) && ((arg.indexOf(' ') >= 0) || (arg.indexOf('&') >= 0))) { startArgs.push(arg); } else { startArgs.push(arg); }
-                }
-            }
-            startArgs.push('--launch', process.pid);
+            for (const flag of process.execArgv) { startArgs.push(flag); }
+            startArgs.push(process.argv[1]);
+            for (let i = 2; i < process.argv.length; i++) { startArgs.push(process.argv[i]); }
+            startArgs.push('--launch', process.pid.toString());
             obj.launchChildServer(startArgs);
         }
     };
@@ -610,9 +607,7 @@ function CreateMeshCentralServer(config, args) {
         const child_process = require('child_process');
         const isInspectorAttached = (()=> { try { return require('node:inspector').url() !== undefined; } catch (_) { return false; } }).call();
         const logFromChildProcess = isInspectorAttached ? () => {} : console.log.bind(console);
-        try { if (process.traceDeprecation === true) { startArgs.unshift('--trace-deprecation'); } } catch (ex) { }
-        try { if (process.traceProcessWarnings === true) { startArgs.unshift('--trace-warnings'); } } catch (ex) { }
-        if (startArgs[0] != "--disable-proto=delete") startArgs.unshift("--disable-proto=delete")
+        if (!startArgs.includes('--disable-proto=delete')) { startArgs.unshift('--disable-proto=delete'); }
         childProcess = child_process.execFile(process.argv[0], startArgs, { maxBuffer: Infinity, cwd: obj.parentpath }, function (error, stdout, stderr) {
             if (childProcess.xrestart == 1) {
                 setTimeout(function () { obj.launchChildServer(startArgs); }, 500); // This is an expected restart.
@@ -4014,7 +4009,16 @@ function CreateMeshCentralServer(config, args) {
         try { lines = obj.fs.readFileSync(obj.path.join(obj.datapath, arg.substring(5))).toString().split(/\r?\n/).join('\r').split('\r'); } catch (ex) { }
         if (lines == null) return null;
         const validLines = [];
-        for (var i in lines) { if ((lines[i].length > 0) && (((lines[i].charAt(0) > '0') && (lines[i].charAt(0) < '9')) || (lines[i].charAt(0) == ':'))) validLines.push(lines[i]); }
+        for (var i in lines) { 
+            const line = lines[i].trim();
+            if (line.length === 0) continue;
+            if (line.charAt(0) === '#') continue;
+            const parts = line.split('#');
+            const candidate = parts[0].trim();
+            if (candidate.length > 0 && candidate.indexOf('@') === -1 && (candidate.indexOf('.') > -1 || candidate.charAt(0) === ':')) {
+                validLines.push(candidate);
+            }
+        }
         return validLines;
     }
 
