@@ -4096,11 +4096,11 @@ module.exports.CreateWebServer = function (parent, db, args, certificates, doneF
                 res.send(JSON.stringify({ response: 'ok' }));
                 console.log('Started server translation...');
                 obj.pendingTranslation = true;
-                require('child_process').exec('node translate.js translateall \"' + translateFile + '\"', { maxBuffer: 512000, timeout: 120000, cwd: obj.path.join(__dirname, 'translate') }, function (error, stdout, stderr) {
+                require('child_process').exec(process.argv[0] + ' translate.js translateall \"' + translateFile + '\"', { maxBuffer: 512000, timeout: 300000, cwd: obj.path.join(__dirname, 'translate') }, function (error, stdout, stderr) {
                     delete obj.pendingTranslation;
-                    //console.log('error', error);
-                    //console.log('stdout', stdout);
-                    //console.log('stderr', stderr);
+                    if (error) { console.log('Server translation error', error); }
+                    // console.log('stdout', stdout);
+                    if (stderr) { console.log('Server translation stderr', stderr); }
                     //console.log('Server restart...'); // Perform a server restart
                     //process.exit(0);
                     console.log('Server translation completed.');
@@ -6582,7 +6582,7 @@ module.exports.CreateWebServer = function (parent, db, args, certificates, doneF
         // Start a second agent-only server if needed
         if (obj.args.agentport) {
             var agentPortTls = true;
-            if (obj.args.tlsoffload != null) { agentPortTls = false; }
+            if (obj.args.tlsoffload != null && obj.args.tlsoffload != false) { agentPortTls = false; }
             if (typeof obj.args.agentporttls == 'boolean') { agentPortTls = obj.args.agentporttls; }
             if (obj.certificates.webdefault == null) { agentPortTls = false; }
 

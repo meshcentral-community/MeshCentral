@@ -83,12 +83,12 @@ function bcdOK() {
 }
 function getDomainInfo() {
     var hostname = require('os').hostname();
-    var ret = { Name: hostname, Domain: "" };
+    var ret = { Name: hostname, Domain: "", PartOfDomain: false };
 
     switch (process.platform) {
         case 'win32':
             try {
-                ret = require('win-wmi').query('ROOT\\CIMV2', 'SELECT * FROM Win32_ComputerSystem', ['Name', 'Domain'])[0];
+                ret = require('win-wmi').query('ROOT\\CIMV2', 'SELECT * FROM Win32_ComputerSystem', ['Name', 'Domain', 'PartOfDomain'])[0];
             }
             catch (x) {
             }
@@ -126,7 +126,7 @@ function getDomainInfo() {
                 }
                 while (names.length > 0) {
                     if (hostname.endsWith('.' + names.peek())) {
-                        ret = { Name: hostname.substring(0, hostname.length - names.peek().length - 1), Domain: names.peek() };
+                        ret = { Name: hostname.substring(0, hostname.length - names.peek().length - 1), Domain: names.peek(), PartOfDomain: true };
                         break;
                     }
                     names.pop();
@@ -681,11 +681,25 @@ function onUserSessionChanged(user, locked) {
 
         var u = [], a = users.Active;
         if(meshCoreObj.lusers == null) { meshCoreObj.lusers = []; }
+        if(meshCoreObj.upnusers == null) { meshCoreObj.upnusers = []; }
+        var ret = getDomainInfo();
         for (var i = 0; i < a.length; i++) {
             var un = a[i].Domain ? (a[i].Domain + '\\' + a[i].Username) : (a[i].Username);
             if (user && locked && (JSON.stringify(a[i]) === JSON.stringify(user))) { if (meshCoreObj.lusers.indexOf(un) == -1) { meshCoreObj.lusers.push(un); } }
             else if (user && !locked && (JSON.stringify(a[i]) === JSON.stringify(user))) { meshCoreObj.lusers.splice(meshCoreObj.lusers.indexOf(un), 1); }
             if (u.indexOf(un) == -1) { u.push(un); } // Only push users in the list once.
+            if (a[i].Domain != null && a[i].Domain == 'AzureAD'){
+                // AzureAD to-do
+                // var userGUID = require('win-registry').QueryKey(require('win-registry').HKEY.LocalMachine, 'SYSTEM\\CurrentControlSet\\Control\\CloudDomainJoin\\JoinInfo');
+                // if (userGUID != null){
+                //     var user = require('win-registry').QueryKey(require('win-registry').HKEY.LocalMachine, 'SYSTEM\\CurrentControlSet\\Control\\CloudDomainJoin\\JoinInfo\\' + userGUID.subkeys[0], 'UserEmail');
+                //     if (user != null) u[i].UPN = user;
+                // }
+            } else if (a[i].Domain != null) {
+                if (ret != null && ret.PartOfDomain === true) {
+                    meshCoreObj.upnusers.push(a[i].Username + '@' + ret.Domain);
+                }
+            }
         }
         meshCoreObj.lusers = meshCoreObj.lusers;
         meshCoreObj.users = u;
@@ -1524,6 +1538,13 @@ function handleServerCommand(data) {
                         }
                         break;
                     }
+                    case 'sysinfo': {
+                        // Send system information
+                        getSystemInformation(function (results) {
+                            if ((results != null) && (data.hash != results.hash)) { mesh.SendCommand({ action: 'sysinfo', sessionid: this.sessionid, data: results }); }
+                        });
+                        break;
+                    }
                     default:
                         // Unknown action, ignore it.
                         break;
@@ -1905,7 +1926,11 @@ function getSystemInformation(func) {
             try { delete x.TotalVisibleMemorySize; } catch (ex) { }
             try {
                 if (results.hardware.windows.memory) { for (var i in results.hardware.windows.memory) { delete results.hardware.windows.memory[i].Node; } }
-                if (results.hardware.windows.osinfo) { delete results.hardware.windows.osinfo.Node; }
+                if (results.hardware.windows.osinfo) { 
+                    delete results.hardware.windows.osinfo.Node;
+                    results.hardware.windows.osinfo.Domain = getDomainInfo().Domain;
+                    results.hardware.windows.osinfo.PartOfDomain = getDomainInfo().PartOfDomain;
+                }
                 if (results.hardware.windows.partitions) { for (var i in results.hardware.windows.partitions) { delete results.hardware.windows.partitions[i].Node; } }
             } catch (ex) { }
             if (x.LastBootUpTime) { // detect windows uptime
@@ -4044,15 +4069,18 @@ function processConsoleCommand(cmd, args, rights, sessionid) {
         var response = null;
         switch (cmd) {
             case 'help': { // Displays available commands
-                var fin = '', f = '', availcommands = 'domain,translations,agentupdate,errorlog,msh,timerinfo,coreinfo,coreinfoupdate,coredump,service,fdsnapshot,fdcount,startupoptions,alert,agentsize,versions,help,info,osinfo,args,print,type,dbkeys,dbget,dbset,dbcompact,eval,parseuri,httpget,wslist,plugin,wsconnect,wssend,wsclose,notify,ls,ps,kill,netinfo,location,power,wakeonlan,setdebug,smbios,rawsmbios,toast,lock,users,openurl,getscript,getclip,setclip,log,cpuinfo,sysinfo,apf,scanwifi,wallpaper,agentmsg,task,uninstallagent,display,openfile';
+                var fin = '', f = '', availcommands = 'domain,translations,agentupdate,errorlog,msh,timerinfo,coreinfo,coreinfoupdate,coredump,service,fdsnapshot,fdcount,startupoptions,';
+                availcommands += 'alert,agentsize,versions,help,info,osinfo,args,print,type,dbkeys,dbget,dbset,dbcompact,eval,parseuri,httpget,wslist,plugin,wsconnect,wssend,wsclose,notify,';
+                availcommands += 'ls,ps,kill,netinfo,location,power,wakeonlan,setdebug,smbios,rawsmbios,toast,lock,users,openurl,getscript,getclip,setclip,log,cpuinfo,sysinfo';
+                availcommands += 'apf,scanwifi,wallpaper,agentmsg,task,uninstallagent,display,openfile';
                 if (require('os').dns != null) { availcommands += ',dnsinfo'; }
                 try { require('linux-dhcp'); availcommands += ',dhcp'; } catch (ex) { }
                 if (process.platform == 'win32') {
-                    availcommands += ',bitlocker,cs,wpfhwacceleration,uac,volumes,rdpport,deskbackground';
+                    availcommands += ',bitlocker,cs,wpfhwacceleration,uac,volumes,rdpport,deskbackground,domaininfo';
                     if (bcdOK()) { availcommands += ',safemode'; }
                     if (require('notifybar-desktop').DefaultPinned != null) { availcommands += ',privacybar'; }
                     try { require('win-utils'); availcommands += ',taskbar'; } catch (ex) { }
-                    try { require('win-info'); availcommands += ',installedapps,qfe,defender,av'; } catch (ex) { }
+                    try { require('win-info'); availcommands += ',installedapps,qfe,defender,av,installedstoreapps'; } catch (ex) { }
                 }
                 if (amt != null) { availcommands += ',amt,amtconfig,amtevents'; }
                 if (process.platform != 'freebsd') { availcommands += ',vm'; }
@@ -4163,7 +4191,7 @@ function processConsoleCommand(cmd, args, rights, sessionid) {
             case 'domaininfo':
                 {
                     if (process.platform != 'win32') {
-                        response = 'Unknown command "cs", type "help" for list of available commands.';
+                        response = 'Unknown command "domaininfo", type "help" for list of available commands.';
                         break;
                     }
                     if (global._domainQuery != null) {
@@ -4750,8 +4778,23 @@ function processConsoleCommand(cmd, args, rights, sessionid) {
                     p.sessionid = sessionid;
                     p.then(function (u) {
                         var v = [];
+                        var ret = getDomainInfo();
                         for (var i in u) {
-                            if (u[i].State == 'Active') { v.push({ tsid: i, type: u[i].StationName, user: u[i].Username, domain: u[i].Domain }); }
+                            if (u[i].State == 'Active') {
+                               if (u[i].Domain != null && u[i].Domain == 'AzureAD'){
+                                    // AzureAD to-do
+                                    // var userGUID = require('win-registry').QueryKey(require('win-registry').HKEY.LocalMachine, 'SYSTEM\\CurrentControlSet\\Control\\CloudDomainJoin\\JoinInfo');
+                                    // if (userGUID != null){
+                                    //     var user = require('win-registry').QueryKey(require('win-registry').HKEY.LocalMachine, 'SYSTEM\\CurrentControlSet\\Control\\CloudDomainJoin\\JoinInfo\\' + userGUID.subkeys[0], 'UserEmail');
+                                    //     if (user != null) u[i].UPN = user;
+                                    // }
+                                } else if (u[i].Domain != null) {
+                                    if (ret != null && ret.PartOfDomain === true) {
+                                        u[i].UPN = u[i].Username + '@' + ret.Domain;
+                                    }
+                                }
+                                v.push({ tsid: i, type: u[i].StationName, user: u[i].Username, domain: u[i].Domain, upn: u[i].UPN });
+                            }
                         }
                         sendConsoleText(JSON.stringify(v, null, 1), this.sessionid);
                     });
@@ -4962,7 +5005,24 @@ function processConsoleCommand(cmd, args, rights, sessionid) {
             }
             case 'users': {
                 if (meshCoreObj.users == null) { response = 'Active users are unknown.'; } else { response = 'Active Users: ' + meshCoreObj.users.join(', ') + '.'; }
-                require('user-sessions').enumerateUsers().then(function (u) { for (var i in u) { sendConsoleText(u[i]); } });
+                require('user-sessions').enumerateUsers().then(function (u) { 
+                    var ret = getDomainInfo();
+                    for (var i in u) { 
+                        if (u[i].Domain != null && u[i].Domain == 'AzureAD'){
+                            // AzureAD to-do
+                            // var userGUID = require('win-registry').QueryKey(require('win-registry').HKEY.LocalMachine, 'SYSTEM\\CurrentControlSet\\Control\\CloudDomainJoin\\JoinInfo');
+                            // if (userGUID != null){
+                            //     var user = require('win-registry').QueryKey(require('win-registry').HKEY.LocalMachine, 'SYSTEM\\CurrentControlSet\\Control\\CloudDomainJoin\\JoinInfo\\' + userGUID.subkeys[0], 'UserEmail');
+                            //     if (user != null) u[i].UPN = user;
+                            // }
+                        } else if (u[i].Domain != null) {
+                            if (ret != null && ret.PartOfDomain === true) {
+                                u[i].UPN = u[i].Username + '@' + ret.Domain;
+                            }
+                        }
+                        sendConsoleText(u[i]);
+                    }
+                });
                 break;
             }
             case 'kvmusers':
@@ -5531,6 +5591,15 @@ function processConsoleCommand(cmd, args, rights, sessionid) {
             case 'installedapps': {
                 if(process.platform == 'win32'){
                     require('win-info').installedApps().then(function (apps){ sendConsoleText(JSON.stringify(apps,null,1)); });
+                }
+                break;
+            }
+            case 'installedstoreapps': {
+                if(process.platform == 'win32'){
+                    var apps = require('win-info').installedStoreApps();
+                    if (apps[0]) {
+                        sendConsoleText(JSON.stringify(apps,null,1));
+                    };
                 }
                 break;
             }
