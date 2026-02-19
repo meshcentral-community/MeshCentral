@@ -210,6 +210,11 @@
               "type": "string",
               "default": "meshcentral",
               "description": "Name of PostgreSQL database used"
+            },
+            "createdatabase": {
+              "type": "boolean",
+              "default": true,
+              "description": "Set to false to skip database existence check and creation. Useful when the connected user does not have permission to create databases."
             }
           }
         },
@@ -1922,6 +1927,11 @@
             "default": false,
             "description": "When enabled, this will show the notes panel in the device view"
           },
+          "collapseGroups": {
+            "type": "boolean",
+            "default": false,
+            "description": "When enabled, device groups will be collapsed by default in the devices tab."
+          },
           "userSessionsSort": {
             "type": "string",
             "default": "SessionId",
@@ -1994,6 +2004,10 @@
           },
           "customUI": {
             "type": "object"
+          },
+          "themePack": {
+            "type": "string",
+            "description": "The name of the theme pack to use for this domain. Example: \"Stylish-UI\""
           },
           "customFiles": {
             "type": "object",
@@ -3309,6 +3323,26 @@
                     "type": "string",
                     "description": "GitHub client secret."
                   },
+                  "authorizationurl": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "The URL used to obtain an authorization grant from the user."
+                  },
+                  "tokenurl": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "The URL used to exchange a code for an access token."
+                  },
+                  "userprofileurl": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "The URL used to obtain user profile information."
+                  },
+                  "useremailurl": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "The URL used to obtain user email information."
+                  },
                   "logouturl": {
                     "type": "string",
                     "format": "uri",
@@ -3654,9 +3688,12 @@
                         ]
                       },
                       "post_logout_redirect_uri": {
-                        "type": "string",
+                        "type": [
+                          "string",
+                          "boolean"
+                        ],
                         "format": "uri",
-                        "description": "URI for your IdP to send you after logging out of IdP via MeshCentral. (Default is https:[currentHost][currentPath]/login)"
+                        "description": "URI for your IdP to send you after logging out of IdP via MeshCentral. (Default is https:[currentHost][currentPath]/login) OR set to false to not send a post logout redirect_uri"
                       },
                       "default_max_age": {
                         "type": "number",
@@ -3891,6 +3928,24 @@
                           "azure",
                           "google"
                         ]
+                      },
+                      "buttonText": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "description": "Custom text for the OIDC login buttons shown on the login page (tooltip only). Minimum 1 character, maximum 128 characters."
+                      },
+                      "buttonIconUrl": {
+                        "type": "string",
+                        "description": "URL to a hosted icon for standard displays (supports PNG, JPEG, WEBP, GIF, ICO, SVG). The server validates remote images before use; if validation fails the UI falls back to local login icons. Used for both 1x and 2x if buttonIconUrl2x is not set.",
+                        "format": "uri",
+                        "pattern": "^[hH][tT][tT][pP][sS]?://"
+                      },
+                      "buttonIconUrl2x": {
+                        "type": "string",
+                        "description": "Optional URL to a higher resolution icon for 2x/high-DPI displays. If not set, buttonIconUrl is used for both. The server validates remote images before use.",
+                        "format": "uri",
+                        "pattern": "^[hH][tT][tT][pP][sS]?://"
                       },
                       "tenant_id": {
                         "type": "string",

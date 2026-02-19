@@ -206,6 +206,7 @@
       "_minify": true,
       "_hidePowerTimeline": true,
       "_showNotesPanel": true,
+      "_collapseGroups": true,
       "_userSessionsSort": "Username",
       "_newAccounts": true,
       "_newAccountsUserGroups": [ "ugrp//xxxxxxxxxxxxxxxxx" ],
@@ -524,7 +525,11 @@
           "_newAccountsUserGroups": [ "ugrp//xxxxxxxxxxxxxxxxx" ],
           "_newAccountsRights": [ "nonewgroups", "notools" ],
           "clientid": "xxxxxxxxxxxxxxxxxxxxxxx",
-          "clientsecret": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          "clientsecret": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "_authorizationurl": "https://hostname/login/oauth/authorize",
+          "_tokenurl": "https://hostname/login/oauth/access_token",
+          "_userprofileurl": "https://hostname/user",
+          "_useremailurl": "https://hostname/user/emails"
         },
         "azure": {
           "_callbackurl": "https://server/auth-azure-callback",
@@ -562,6 +567,11 @@
           "client": {
             "client_id": "00000000-0000-0000-0000-000000000000",
             "client_secret": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          },
+          "_custom": {
+            "_buttonText": "Sign-in using Custom Button Text",
+            "_buttonIconUrl": "https://example.com/custom-icon.png",
+            "_buttonIconUrl2x": "https://example.com/custom-icon-2x.png"
           },
           "groups": {
             "required": [ "groupA", "groupB", "groupC" ],

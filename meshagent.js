@@ -1087,7 +1087,7 @@ module.exports.CreateMeshAgent = function (parent, db, ws, req, args, domain) {
 
                     // If we need to ask for IP location, see if we have the quota to do it.
                     if (doIpLocation > 0) {
-                        db.getValueOfTheDay('ipLocationRequestLimitor', 10, function (ipLocationLimitor) {
+                        db.getValueOfTheDay('ipLocationRequestLimitor', 1000, function (ipLocationLimitor) {
                             if ((ipLocationLimitor != null) && (ipLocationLimitor.value > 0)) {
                                 ipLocationLimitor.value--;
                                 db.Set(ipLocationLimitor);
@@ -1932,6 +1932,10 @@ module.exports.CreateMeshAgent = function (parent, db, ws, req, args, domain) {
                 if (command.lastbootuptime != null) { // Last Boot Up Time
                     if (!device.lastbootuptime) { device.lastbootuptime = ""; }
                     if (device.lastbootuptime != command.lastbootuptime) { /*changes.push('Last Boot Up Time');*/ device.lastbootuptime = command.lastbootuptime; change = 1; log = 1; }
+                }
+if (command.idletime != null) { // Idle Time
+                    if (!device.idletime) { device.idletime = 0; }
+                    if (parseInt(device.idletime) != parseInt(command.idletime)) { /*changes.push('Idle Time');*/ device.idletime = parseInt(command.idletime); change = 1; } // Don't log idle time changes, this is too volatile.
                 }
 
                 // Push Messaging Token

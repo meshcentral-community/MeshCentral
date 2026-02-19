@@ -874,7 +874,7 @@ module.exports.CreateWebServer = function (parent, db, args, certificates, doneF
                 if (typeof domain.authstrategies.oidc.logouturl == 'string') {
                     logouturl = domain.authstrategies.oidc.logouturl;
                 } else if (typeof domain.authstrategies.oidc.issuer.end_session_endpoint == 'string' && typeof domain.authstrategies.oidc.client.post_logout_redirect_uri == 'string') {
-                    logouturl = domain.authstrategies.oidc.issuer.end_session_endpoint + '?post_logout_redirect_uri=' + domain.authstrategies.oidc.client.post_logout_redirect_uri;
+                    logouturl = domain.authstrategies.oidc.issuer.end_session_endpoint + (domain.authstrategies.oidc.issuer.end_session_endpoint.indexOf('?') == -1 ? '?' : '&') + 'post_logout_redirect_uri=' + domain.authstrategies.oidc.client.post_logout_redirect_uri;
                 } else if (typeof domain.authstrategies.oidc.issuer.end_session_endpoint == 'string') {
                     logouturl = domain.authstrategies.oidc.issuer.end_session_endpoint;
                 }
@@ -3271,7 +3271,8 @@ module.exports.CreateWebServer = function (parent, db, args, certificates, doneF
                     hidePowerTimeline: (domain.hidepowertimeline ? 'true' : 'false'),
                     showNotesPanel: (domain.shownotespanel ? 'true' : 'false'),
                     userSessionsSort: (domain.usersessionssort ? domain.usersessionssort : 'SessionId'),
-                    webrtcconfig: webRtcConfig
+                    webrtcconfig: webRtcConfig,
+                    collapseGroups: (domain.collapsegroups ? 'true' : 'false')
                 }, dbGetFunc.req, domain, uiViewMode), user);
             }
             xdbGetFunc.req = req;
@@ -3499,6 +3500,36 @@ module.exports.CreateWebServer = function (parent, db, args, certificates, doneF
         }
 
         // Render the login page
+        // Allow configurable OIDC login button text via domain.authstrategies.oidc.custom
+        var oidcButtonIcon, oidcButtonIcon2x, oidcButtonText;
+        if (obj.common.validateObject(domain.authstrategies) && obj.common.validateObject(domain.authstrategies.oidc) && obj.common.validateObject(domain.authstrategies.oidc.custom)) {
+            if (obj.common.validateUrl(domain.authstrategies.oidc.custom.buttoniconurl)) {
+                oidcButtonIcon = domain.authstrategies.oidc.custom.buttoniconurl;
+                if (obj.common.validateUrl(domain.authstrategies.oidc.custom.buttoniconurl2x)) {
+                    oidcButtonIcon2x = domain.authstrategies.oidc.custom.buttoniconurl2x + ' 2x';
+                } else {
+                    oidcButtonIcon2x = domain.authstrategies.oidc.custom.buttoniconurl + ' 2x';
+                }
+            } else {
+                switch (domain.authstrategies.oidc.custom.preset) {
+                    case 'azure':
+                        oidcButtonIcon = "images/login/azure32.png";
+                        oidcButtonIcon2x = "images/login/azure64.png 2x";
+                        break;
+                    case 'google':
+                        oidcButtonIcon = "images/login/google32.png";
+                        oidcButtonIcon2x = "images/login/google64.png 2x";
+                        break;
+                    default:
+                        oidcButtonIcon = "images/login/oidc32.png";
+                        oidcButtonIcon2x = "images/login/oidc64.png 2x";
+                }
+            }
+
+            if (obj.common.validateString(domain.authstrategies.oidc.custom.buttontext, 1, 128)) {
+                oidcButtonText = domain.authstrategies.oidc.custom.buttontext;
+            }
+        }
         render(req, res,
             getRenderPage((domain.sitestyle >= 2) ? 'login2' : 'login', req, domain),
             getRenderArgs({
@@ -3550,6 +3581,9 @@ module.exports.CreateWebServer = function (parent, db, args, certificates, doneF
                 autofido: autofido,
                 twoFactorCookieDays: twoFactorCookieDays,
                 authStrategies: authStrategies.join(','),
+                oidcButtonText: oidcButtonText || '',
+                oidcButtonIcon: oidcButtonIcon || 'images/login/oidc32.png',
+                oidcButtonIcon2x: oidcButtonIcon2x || 'images/login/oidc64.png 2x',
                 loginpicture: (typeof domain.loginpicture == 'string'),
                 tokenTimeout: twoFactorTimeout, // Two-factor authentication screen timeout in milliseconds,
                 renderLanguages: obj.renderLanguages,
@@ -6808,13 +6842,25 @@ module.exports.CreateWebServer = function (parent, db, args, certificates, doneF
             if ((typeof domain.duo2factor == 'object') && (typeof domain.duo2factor.apihostname == 'string')) {
                 duoSrc = domain.duo2factor.apihostname;
             }
-                
+
+            // If a custom OIDC button icon URL is configured, allow its origin in img-src CSP
+            var extraImgSrc = '';
+            if (obj.common.validateObject(domain.authstrategies) && obj.common.validateObject(domain.authstrategies.oidc) && obj.common.validateObject(domain.authstrategies.oidc.custom)) {
+                const seen = {};
+                const urls = [domain.authstrategies.oidc.custom.buttoniconurl, domain.authstrategies.oidc.custom.buttoniconurl2x];
+                for (var k = 0; k < urls.length; k++) {
+                    if (obj.common.validateUrl(urls[k])) {
+                        try { const u = new URL(urls[k]); if (!seen[u.origin]) { extraImgSrc += ' ' + u.origin; seen[u.origin] = true; } } catch (e) {}
+                    }
+                }
+            }
+
             // Finish setup security headers
             const headers = {
                 'Referrer-Policy': 'no-referrer',
                 'X-XSS-Protection': '1; mode=block',
                 'X-Content-Type-Options': 'nosniff',
-                'Content-Security-Policy': "default-src 'none'; font-src 'self' fonts.gstatic.com data:; script-src 'self' 'unsafe-inline' " + extraScriptSrc + "; connect-src 'self'" + geourl + selfurl + "; img-src 'self' blob: data:" + geourl + " data:; style-src 'self' 'unsafe-inline' fonts.googleapis.com; frame-src 'self' blob: mcrouter:" + extraFrameSrc + "; media-src 'self'; form-action 'self' " + duoSrc + "; manifest-src 'self'"
+                'Content-Security-Policy': "default-src 'none'; font-src 'self' fonts.gstatic.com data:; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' " + extraScriptSrc + "; connect-src 'self'" + geourl + selfurl + "; img-src 'self' blob: data:" + geourl + extraImgSrc + " data:; style-src 'self' 'unsafe-inline' fonts.googleapis.com; frame-src 'self' blob: mcrouter:" + extraFrameSrc + "; media-src 'self'; form-action 'self' " + duoSrc + "; manifest-src 'self'"
             };
             if (req.headers['user-agent'] && (req.headers['user-agent'].indexOf('Chrome') >= 0)) { headers['Permissions-Policy'] = 'interest-cohort=()'; } // Remove Google's FLoC Network, only send this if Chrome browser
             if ((parent.config.settings.allowframing !== true) && (typeof parent.config.settings.allowframing !== 'string')) { headers['X-Frame-Options'] = 'sameorigin'; }
@@ -7674,6 +7720,25 @@ module.exports.CreateWebServer = function (parent, db, args, certificates, doneF
                     // Handle all incoming requests as web relays
                     obj.webRelayRouter.head('/*', function (req, res) { try { handleWebRelayRequest(req, res); } catch (ex) { console.log(ex); } })
                 }
+                
+               // Theme Pack Override Middleware
+               obj.app.use(url, function (req, res, next) {
+                if (req.method !== 'GET') return next();
+                var domain = getDomain(req);
+                // Serve theme pack files if domain has a theme pack configured
+                if (domain && domain.themepack) {
+                    var themeFilePath = obj.path.join(obj.parent.datapath, 'theme-pack', domain.themepack, 'public', req.path);
+                    // Prevent directory traversal
+                    if (themeFilePath.indexOf('..') >= 0) return next();
+
+                    obj.fs.stat(themeFilePath, function (err, stats) {
+                        if (err || !stats.isFile()) return next();
+                        res.sendFile(themeFilePath);
+                    });
+                } else {
+                    next();
+                }
+            });
 
                 // Indicates to ExpressJS that the override public folder should be used to serve static files.
                 obj.app.use(url, function(req, res, next){
@@ -7799,6 +7864,11 @@ module.exports.CreateWebServer = function (parent, db, args, certificates, doneF
             const GitHubStrategy = require('passport-github2');
             let options = { clientID: domain.authstrategies.github.clientid, clientSecret: domain.authstrategies.github.clientsecret };
             if (typeof domain.authstrategies.github.callbackurl == 'string') { options.callbackURL = domain.authstrategies.github.callbackurl; } else { options.callbackURL = url + 'auth-github-callback'; }
+            //override passport-github2 defaults that point to github.com with urls specified by user
+            if (typeof domain.authstrategies.github.authorizationurl == 'string') { options.authorizationURL = domain.authstrategies.github.authorizationurl; }
+            if (typeof domain.authstrategies.github.tokenurl == 'string') { options.tokenURL = domain.authstrategies.github.tokenurl; }
+            if (typeof domain.authstrategies.github.userprofileurl == 'string') { options.userProfileURL = domain.authstrategies.github.userprofileurl; }
+            if (typeof domain.authstrategies.github.useremailurl == 'string') { options.userEmailURL = domain.authstrategies.github.useremailurl; }
             parent.authLog('setupDomainAuthStrategy', 'Adding Github SSO with options: ' + JSON.stringify(options));
             passport.use('github-' + domain.id, new GitHubStrategy(options,
                 function (token, tokenSecret, profile, cb) {
@@ -7966,10 +8036,10 @@ module.exports.CreateWebServer = function (parent, db, args, certificates, doneF
 
             // Setup Strategy Options
             strategy.custom.scope = obj.common.convertStrArray(strategy.custom.scope, ' ')
-            if (strategy.custom.scope.length > 1) {
-                strategy.options = Object.assign(strategy.options, { 'params': { 'scope': strategy.custom.scope } })
+            if (strategy.custom.scope.length > 0) {
+                strategy.options.params = Object.assign(strategy.options.params || {}, { 'scope': strategy.custom.scope });
             } else {
-                strategy.options = Object.assign(strategy.options, { 'params': { 'scope': ['openid', 'profile', 'email'] } })
+                strategy.options.params = Object.assign(strategy.options.params || {}, { 'scope': ['openid', 'profile', 'email'] });
             }
             if (typeof strategy.groups == 'object') {
                 let groupScope = strategy.groups.scope || null
@@ -8011,7 +8081,7 @@ module.exports.CreateWebServer = function (parent, db, args, certificates, doneF
             if (!strategy.client.redirect_uri) {
                 strategy.client.redirect_uri = origin + url + 'auth-oidc-callback';
             }
-            if (!strategy.client.post_logout_redirect_uri) {
+            if (!strategy.client.post_logout_redirect_uri && strategy.client.post_logout_redirect_uri !== false) {
                 strategy.client.post_logout_redirect_uri = origin + url + 'login';
             }
 
@@ -8021,6 +8091,34 @@ module.exports.CreateWebServer = function (parent, db, args, certificates, doneF
             strategy.client = client.metadata
             strategy.obj.client = client
 
+            // Validate OIDC Icon Url once and null it if it fails validation
+            if (obj.common.validateObject(strategy.custom) && obj.common.validateString(strategy.custom.buttoniconurl)) {
+                if (obj.common.validateUrl(strategy.custom.buttoniconurl)){
+                    if (await obj.common.validateRemoteImage(strategy.custom.buttoniconurl, { agent: obj.httpsProxyAgent })) {
+                        parent.debug('verbose', 'OIDC: Validated Icon URL and Image: ' + strategy.custom.buttoniconurl);
+                    } else {
+                        parent.debug('warning', 'OIDC: Icon URL and Image validation failed: ' + strategy.custom.buttoniconurl);
+                        strategy.custom.buttoniconurl = null;
+                    }
+                } else {
+                    parent.debug('warning', 'OIDC: Invalid Icon URL: ' + strategy.custom.buttoniconurl);
+                    strategy.custom.buttoniconurl = null;
+                }
+            }
+            // Validate OIDC 2x Icon Url once and null it if it fails validation
+            if (obj.common.validateObject(strategy.custom) && obj.common.validateString(strategy.custom.buttoniconurl2x)) {
+                if (obj.common.validateUrl(strategy.custom.buttoniconurl2x)){
+                    if (await obj.common.validateRemoteImage(strategy.custom.buttoniconurl2x, { agent: obj.httpsProxyAgent })) {
+                        parent.debug('verbose', 'OIDC: Validated 2x Icon URL and Image: ' + strategy.custom.buttoniconurl2x);
+                    } else {
+                        parent.debug('warning', 'OIDC: 2x Icon URL and Image validation failed: ' + strategy.custom.buttoniconurl2x);
+                        strategy.custom.buttoniconurl2x = null;
+                    }
+                } else {
+                    parent.debug('warning', 'OIDC: Invalid 2x Icon URL: ' + strategy.custom.buttoniconurl2x);
+                    strategy.custom.buttoniconurl2x = null;
+                }
+            }
             // Setup strategy and save configs for later
             passport.use('oidc-' + domain.id, new strategy.obj.openidClient.Strategy(strategy.options, oidcCallback));
             parent.config.domains[domain.id].authstrategies.oidc = strategy;
@@ -8152,12 +8250,10 @@ module.exports.CreateWebServer = function (parent, db, args, certificates, doneF
                     user.groups = profile && obj.common.validateStrArray(profile[strategy.groups.claim], 1) ? profile[strategy.groups.claim] : null
                 }
 
-                // Setup end session enpoint if not already configured this requires an auth token
+                // Setup end session endpoint
                 try {
-                    if (!strategy.issuer.end_session_endpoint) {
-                        strategy.issuer.end_session_endpoint = strategy.obj.client.endSessionUrl({ 'id_token_hint': tokenset })
-                        parent.authLog('oidcCallback', `OIDC: Discovered end_session_endpoint: ${strategy.issuer.end_session_endpoint}`);
-                    }
+                    strategy.issuer.end_session_endpoint = strategy.obj.client.endSessionUrl({ 'id_token_hint': tokenset })
+                    parent.authLog('oidcCallback', `OIDC: Discovered end_session_endpoint: ${strategy.issuer.end_session_endpoint}`);
                 } catch (err) {
                     let error = new Error('OIDC: Discovering end_session_endpoint failed. Using Default.', { cause: err });
                     strategy.issuer.end_session_endpoint = strategy.issuer.issuer + '/logout';
@@ -9261,15 +9357,17 @@ module.exports.CreateWebServer = function (parent, db, args, certificates, doneF
         if (typeof mesh == 'string') { meshid = mesh; } else if ((typeof mesh == 'object') && (typeof mesh._id == 'string')) { meshid = mesh._id; } else return 0;
 
         // Check if we have this in the cache
-        const cacheid = user._id + '/' + meshid + '/' + nodeid;
-        const cache = GetNodeRightsCache[cacheid];
+
+        const cache = ((GetNodeRightsCache[user._id] || {})[meshid] || {})[nodeid];
         if (cache != null) { if (cache.t > Date.now()) { return cache.o; } else { GetNodeRightsCacheCount--; } } // Cache hit, or we need to update the cache
-        if (GetNodeRightsCacheCount > 2000) { GetNodeRightsCache = {}; GetNodeRightsCacheCount = 0; } // From time to time, flush the cache
+        if (GetNodeRightsCacheCount > 2000) { obj.FlushGetNodeRightsCache() } // From time to time, flush the cache
 
         var r = obj.GetMeshRights(user, mesh);
         if (r == 0xFFFFFFFF) {
             const out = removeUserRights(r, user);
-            GetNodeRightsCache[cacheid] = { t: Date.now() + 10000, o: out };
+            GetNodeRightsCache[user._id] = GetNodeRightsCache[user._id] || {}
+            GetNodeRightsCache[user._id][meshid] = GetNodeRightsCache[user._id][meshid] || {}
+            GetNodeRightsCache[user._id][meshid][nodeid] = { t: Date.now() + 10000, o: out };
             GetNodeRightsCacheCount++;
             return out;
         }
@@ -9278,7 +9376,9 @@ module.exports.CreateWebServer = function (parent, db, args, certificates, doneF
         if ((user.links != null) && (user.links[nodeid] != null)) { r |= user.links[nodeid].rights; } // TODO: Deal with reverse permissions
         if (r == 0xFFFFFFFF) {
             const out = removeUserRights(r, user);
-            GetNodeRightsCache[cacheid] = { t: Date.now() + 10000, o: out };
+            GetNodeRightsCache[user._id] = GetNodeRightsCache[user._id] || {}
+            GetNodeRightsCache[user._id][meshid] = GetNodeRightsCache[user._id][meshid] || {}
+            GetNodeRightsCache[user._id][meshid][nodeid] = { t: Date.now() + 10000, o: out };
             GetNodeRightsCacheCount++;
             return out;
         }
@@ -9292,9 +9392,43 @@ module.exports.CreateWebServer = function (parent, db, args, certificates, doneF
         }
 
         const out = removeUserRights(r, user);
-        GetNodeRightsCache[cacheid] = { t: Date.now() + 10000, o: out };
+        GetNodeRightsCache[user._id] = GetNodeRightsCache[user._id] || {}
+        GetNodeRightsCache[user._id][meshid] = GetNodeRightsCache[user._id][meshid] || {}
+        GetNodeRightsCache[user._id][meshid][nodeid] = { t: Date.now() + 10000, o: out };
         GetNodeRightsCacheCount++;
         return out;
+    }
+
+    obj.InvalidateNodeCache = function (user, mesh, nodeid) {
+        if (user == null) { return; }
+        
+        if (typeof user == 'string') { user = obj.users[user]; }
+        if (user == null) { return 0; }
+        var meshid;
+        if (typeof mesh == 'string') { meshid = mesh; } else if ((typeof mesh == 'object') && (typeof mesh._id == 'string')) { meshid = mesh._id; };
+        
+        if (mesh == null) {
+            for (let [key, val] of Object.entries(GetNodeRightsCache[user._id] || {})) {
+                GetNodeRightsCacheCount -= Object.keys(val).length
+            }
+            delete GetNodeRightsCache[user._id]; 
+            return;
+        }
+        if (nodeid == null) {
+            let cache_reduction = Object.keys((GetNodeRightsCache[user._id] || {})[meshid] || {}).length
+            delete (GetNodeRightsCache[user._id] || {})[meshid]
+            GetNodeRightsCacheCount -= cache_reduction;
+            return; 
+        }
+        if (((GetNodeRightsCache[user._id] || {})[meshid] || {})[nodeid]) {
+            delete ((GetNodeRightsCache[user._id] || {})[meshid] || {})[nodeid]
+            GetNodeRightsCacheCount--;
+        }
+    }
+
+    obj.FlushGetNodeRightsCache = function() {
+        GetNodeRightsCache = {};
+        GetNodeRightsCacheCount = 0;
     }
 
     // Returns a list of displatch targets for a given mesh
@@ -9560,7 +9694,32 @@ module.exports.CreateWebServer = function (parent, db, args, certificates, doneF
         
         return jsTags.trim();
     }
-    
+
+    function generateThemePackCSSTags(domain, currentTemplate) {
+        var cssTags = '';
+        // Load theme pack if domain has one configured AND (domain forces sitestyle 3 OR user is viewing sitestyle 3)
+        var isModernUI = (currentTemplate === 'default3') || (domain.sitestyle === 3);
+        if (domain && domain.themepack && isModernUI) {
+            var themePath = obj.path.join(obj.parent.datapath, 'theme-pack', domain.themepack, 'public');
+            if (obj.fs.existsSync(obj.path.join(themePath, 'styles', 'theme.css'))) {
+                cssTags += '<link keeplink=1 type="text/css" href="styles/theme.css" media="screen" rel="stylesheet" title="CSS" />\n    ';
+            }
+        }
+        return cssTags;
+    }
+    function generateThemePackJSTags(domain, currentTemplate) {
+        var jsTags = '';
+        // Load theme pack if domain has one configured AND (domain forces sitestyle 3 OR user is viewing sitestyle 3)
+        var isModernUI = (currentTemplate === 'default3') || (domain.sitestyle === 3);
+        if (domain && domain.themepack && isModernUI) {
+            var themePath = obj.path.join(obj.parent.datapath, 'theme-pack', domain.themepack, 'public');
+            if (obj.fs.existsSync(obj.path.join(themePath, 'scripts', 'theme.js'))) {
+                jsTags += '<script keeplink=1 type="text/javascript" src="scripts/theme.js"></script>\n    ';
+            }
+        }
+        return jsTags;
+    }
+
     // Return the correct render page arguments.
     function getRenderArgs(xargs, req, domain, page) {
         var minify = (domain.minify == true);
@@ -9614,7 +9773,8 @@ module.exports.CreateWebServer = function (parent, db, args, certificates, doneF
             xargs.customCSSTags = generateCustomCSSTags(null, page);
             xargs.customJSTags = generateCustomJSTags(null, page);
         }
-
+        xargs.customCSSTags += generateThemePackCSSTags(domain, page);
+        xargs.customJSTags += generateThemePackJSTags(domain, page);
         return xargs;
     }
 
