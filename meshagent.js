@@ -98,7 +98,7 @@ module.exports.CreateMeshAgent = function (parent, db, ws, req, args, domain) {
             db.Remove('si' + obj.dbNodeKey);                          // Remove system information
             db.Remove('al' + obj.dbNodeKey);                          // Remove error log last time
             if (db.RemoveSMBIOS) { db.RemoveSMBIOS(obj.dbNodeKey); }  // Remove SMBios data
-            db.RemoveAllNodeEvents(obj.dbNodeKey);                    // Remove all events for this node
+            db.RemoveAllNodeEvents(domain.id, obj.dbNodeKey);         // Remove all events for this node
             db.removeAllPowerEventsForNode(obj.dbNodeKey);            // Remove all power events for this node
 
             // Event node deletion
@@ -208,7 +208,7 @@ module.exports.CreateMeshAgent = function (parent, db, ws, req, args, domain) {
                                 // Clear the core
                                 obj.sendBinary(common.ShortToStr(10) + common.ShortToStr(0)); // MeshCommand_CoreModule, ask mesh agent to clear the core
                                 parent.agentStats.clearingCoreCount++;
-                                parent.parent.debug('agent', "Clearing core");
+                                parent.parent.debug('agent', "Clearing core for agent " + obj.nodeid);
                             } else {
                                 // Setup task limiter options, this system limits how many tasks can run at the same time to spread the server load.
                                 var taskLimiterOptions = { hash: meshcorehash, core: parent.parent.defaultMeshCores[corename], name: corename };
@@ -226,7 +226,7 @@ module.exports.CreateMeshAgent = function (parent, db, ws, req, args, domain) {
                                         delete obj.agentCoreUpdatePending;
                                         obj.sendBinary(common.ShortToStr(10) + common.ShortToStr(0) + argument.hash + argument.core.toString('binary'), function () { parent.parent.taskLimiter.completed(taskid); }); // MeshCommand_CoreModule, start core update
                                         parent.agentStats.updatingCoreCount++;
-                                        parent.parent.debug('agent', "Updating core " + argument.name);
+                                        parent.parent.debug('agent', "Updating core " + argument.name + " for agent " + obj.nodeid);
                                     } else {
                                         // This agent is probably disconnected, nothing to do.
                                         parent.parent.taskLimiter.completed(taskid);
@@ -1224,6 +1224,12 @@ module.exports.CreateMeshAgent = function (parent, db, ws, req, args, domain) {
                         parent.routeAgentCommand(command, obj.domain.id, obj.dbNodeKey, obj.dbMeshKey);
                         break;
                     }
+                case 'software':
+                    {
+                        // Todo - save software into database for offline access but send to web clients for now
+                        parent.routeAgentCommand(command, obj.domain.id, obj.dbNodeKey, obj.dbMeshKey);
+                        break;
+                    }
                 case 'coreinfo':
                     {
                         // Sent by the agent to update agent information
@@ -1455,11 +1461,43 @@ module.exports.CreateMeshAgent = function (parent, db, ws, req, args, domain) {
                         command.data.type = 'sysinfo';
                         command.data.domain = domain.id;
                         command.data.time = Date.now();
-                        db.Set(command.data); // Update system information in the database.
 
-                        // Event the new sysinfo hash, this will notify everyone that the sysinfo document was changed
-                        var event = { etype: 'node', action: 'sysinfohash', nodeid: obj.dbNodeKey, domain: domain.id, hash: command.data.hash, nolog: 1 };
-                        parent.parent.DispatchEvent(parent.CreateMeshDispatchTargets(obj.dbMeshKey, [obj.dbNodeKey]), obj, event);
+                        // Store the document and notify viewers that the sysinfo hash changed.
+                        var saveSysInfo = function () {
+                            db.Set(command.data);
+                            // Event the new sysinfo hash, this will notify everyone that the sysinfo document was changed
+                            var event = { etype: 'node', action: 'sysinfohash', nodeid: obj.dbNodeKey, domain: domain.id, hash: command.data.hash, nolog: 1 };
+                            parent.parent.DispatchEvent(parent.CreateMeshDispatchTargets(obj.dbMeshKey, [obj.dbNodeKey]), obj, event);
+                        };
+
+                        var volumes = command.data.hardware?.windows?.volumes;
+                        if (volumes) {
+                            // BitLocker recovery keys are kept in hardware.windows.bitlocker, keyed by protector identifier
+                            // (decoupled from the drive letter, which can change). A key is retained for 'bitlockerKeyRetentionDays'
+                            // days after it was last read; 0 (default) disables carry-forward, keeping only keys read in this scan.
+                            var ttl = (parent.parent.config.settings?.bitlockerkeyretentiondays > 0) ? (parent.parent.config.settings.bitlockerkeyretentiondays * 86400000) : 0;
+                            var updateBLKeys = function (prevKeys) {
+                                var keys = {};
+                                // Carry forward keys last read within the retention window.
+                                if ((ttl > 0) && prevKeys) {
+                                    for (const id in prevKeys) { if ((command.data.time - prevKeys[id].t) <= ttl) { keys[id] = prevKeys[id]; } }
+                                }
+                                // Record keys actually read this scan (refreshes the timestamp).
+                                for (const v of Object.values(volumes)) {
+                                    if (v.identifier && v.recoveryPassword) { keys[v.identifier] = { rp: v.recoveryPassword, t: command.data.time }; }
+                                }
+                                command.data.hardware.windows.bitlocker = keys;
+                                saveSysInfo();
+                            };
+                            if (ttl > 0) {
+                                // Need the previous doc to carry keys forward.
+                                db.Get(command.data._id, function (err, nodes) { updateBLKeys((nodes && nodes.length > 0) ? nodes[0].hardware?.windows?.bitlocker : null); });
+                            } else {
+                                updateBLKeys(null);   // no carry-forward, no previous-doc read needed
+                            }
+                        } else {
+                            saveSysInfo();   // non-Windows
+                        }
                     }
                     break;
                 }
@@ -1631,8 +1669,9 @@ module.exports.CreateMeshAgent = function (parent, db, ws, req, args, domain) {
                     if ((typeof command.url != 'string') || (typeof command.approved != 'boolean') || (command.url.startsWith('2fa://') == false)) return;
 
                     // parse the URL
+                    // Node 22's WHATWG URL parser rejects custom schemes like 2fa://, so swap to https:// for parsing only.
                     var url = null;
-                    try { url = new URL(command.url); } catch (ex) { }
+                    try { url = new URL(command.url.replace(/^2fa:\/\//, 'https://')); } catch (ex) { }
                     if (url == null) return;
 
                     // Decode the cookie
@@ -1926,6 +1965,10 @@ module.exports.CreateMeshAgent = function (parent, db, ws, req, args, domain) {
                 if (command.wsc != null) { // Windows Security Center
                     if (!device.wsc) { device.wsc = {}; }
                     if (JSON.stringify(device.wsc) != JSON.stringify(command.wsc)) { /*changes.push('Windows Security Center status');*/ device.wsc = command.wsc; change = 1; log = 1; }
+                }
+                if (command.lsc != null) { // Linux Security Center
+                    if (!device.lsc) { device.lsc = {}; }
+                    if (JSON.stringify(device.lsc) != JSON.stringify(command.lsc)) { /*changes.push('Linux Security Center status');*/ device.lsc = command.lsc; change = 1; log = 1; }
                 }
                 if (command.defender != null) { // Defender For Windows Server
                     if (!device.defender) { device.defender = {}; }

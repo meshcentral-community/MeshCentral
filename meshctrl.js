@@ -2976,7 +2976,7 @@ function displayDeviceInfo(sysinfo, lastconnect, network, nodes) {
     if (node.desc != null) { output["Description"] = node.desc; outputCount++; }
     if (node.icon != null) { output["Icon"] = node.icon; outputCount++; }
     if (node.tags) { output["Tags"] = node.tags; outputCount++; }
-    if (node.av) {
+    if (node.av && node.av.length > 0) {
         var av = [];
         for (var i in node.av) {
             if (typeof node.av[i]['product'] == 'string') {
@@ -2993,16 +2993,24 @@ function displayDeviceInfo(sysinfo, lastconnect, network, nodes) {
     if (typeof node.wsc == 'object') {
         output["WindowsSecurityCenter"] = node.wsc; outputCount++;
     }
+    if (typeof node.lsc == 'object') {
+        output["LinuxSecurityCenter"] = node.lsc; outputCount++;
+    }
     if (outputCount > 0) { info["General"] = output; }
 
     // Operating System
     var hardware = null;
     if ((sysinfo != null) && (sysinfo.hardware != null)) { hardware = sysinfo.hardware; }
-    if ((hardware && hardware.windows && hardware.windows.osinfo) || node.osdesc) {
+    if ((hardware && hardware.windows && hardware.windows.osinfo) || (hardware && hardware.linux) || node.osdesc) {
         var output = {}, outputCount = 0;
         if (node.rname) { output["Name"] = node.rname; outputCount++; }
         if (node.osdesc) { output["Version"] = node.osdesc; outputCount++; }
         if (hardware && hardware.windows && hardware.windows.osinfo) { var m = hardware.windows.osinfo; if (m.OSArchitecture) { output["Architecture"] = m.OSArchitecture; outputCount++; } }
+        if (hardware && hardware.linux) {
+            if (hardware.linux.arch) { output["Architecture"] = hardware.linux.arch; outputCount++; }
+            if (hardware.linux.kernel_release) { output["Kernel Release"] = hardware.linux.kernel_release; outputCount++; }
+            if (hardware.linux.kernel_build) { output["Kernel Build"] = hardware.linux.kernel_build; outputCount++; }
+        }
         if (outputCount > 0) { info["Operating System"] = output; }
     }
 
@@ -3197,6 +3205,12 @@ function displayDeviceInfo(sysinfo, lastconnect, network, nodes) {
                 }
             }
         }
+    
+        // Windows volumes
+        if ((hardware?.windows?.volumes)) { info["Volumes"] = hardware.windows.volumes; }
+    
+        // Bitlocker cache
+        if ((hardware?.windows?.bitlocker)) { info["Bitlocker cache"] = hardware.windows.bitlocker; }
     }
 
     // Display everything
